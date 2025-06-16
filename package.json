@@ -1,0 +1,23 @@
+{
+  "name": "ui-library-migration",
+  "version": "1.0.0",
+  "description": "Automated migration script for UI library updates",
+  "main": "migrate.js",
+  "scripts": {
+    "migrate": "node migrate.js",
+    "dry-run": "jscodeshift -t ui-migration-codemod.js ./src --dry",
+    "test-transform": "jscodeshift -t ui-migration-codemod.js ./test-files --dry"
+  },
+  "dependencies": {
+    "jscodeshift": "^0.15.1"
+  },
+  "devDependencies": {},
+  "keywords": [
+    "codemod",
+    "migration",
+    "react",
+    "ui-library"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}
