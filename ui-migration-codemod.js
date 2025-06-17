@@ -14,7 +14,7 @@ const COMPONENT_MAPPING = {
 const PROPS_MAPPING = {
   NewButton: {
     // old prop -> new prop
-    variant: "type",
+    className: "class",
     size: "buttonSize",
     disabled: "isDisabled",
     loading: "isLoading",
@@ -39,10 +39,31 @@ const PROPS_MAPPING = {
   // Add more component-specific prop mappings
 };
 
+const PROP_VALUE_MAPPING = {
+  NewButton: {
+    class: {
+      bold: "strong",
+      outline: "bordered",
+      ghost: "text",
+    },
+    size: {
+      small: "sm",
+      medium: "md",
+      large: "lg",
+    },
+  },
+  NewInput: {
+    size: {
+      small: "sm",
+      large: "lg",
+    },
+  },
+  // Add more components and their prop value mappings
+};
+
 // Configuration: Props to remove for each component
 const PROPS_TO_REMOVE = {
   NewButton: [
-    "className",
     "oldStyle",
     "legacyMode",
     // Props that no longer exist in the new library
@@ -93,10 +114,11 @@ function removeProps(attributes, propsToRemove) {
 }
 
 /**
- * Transform props: rename and remove as specified
+ * Transform props: rename, remove, and transform values as specified
  */
 function transformProps(attributes, componentName) {
   const propMapping = PROPS_MAPPING[componentName] || {};
+  const valueMapping = PROP_VALUE_MAPPING[componentName] || {};
   const propsToRemove = [
     ...(PROPS_TO_REMOVE[componentName] || []),
     ...GLOBAL_PROPS_TO_REMOVE,
@@ -105,14 +127,33 @@ function transformProps(attributes, componentName) {
   // First, remove unwanted props
   let filteredAttributes = removeProps(attributes, propsToRemove);
 
-  // Then, rename props according to mapping
+  // Then, rename props and transform values according to mapping
   filteredAttributes.forEach((attr) => {
     if (attr.type === "JSXAttribute" && attr.name && attr.name.name) {
       const oldPropName = attr.name.name;
-      const newPropName = propMapping[oldPropName];
+      const newPropName = propMapping[oldPropName] || oldPropName;
 
-      if (newPropName) {
-        attr.name.name = newPropName;
+      // Update prop name
+      attr.name.name = newPropName;
+
+      // Transform prop value if there's a value mapping
+      if (valueMapping[newPropName] && attr.value) {
+        if (attr.value.type === "StringLiteral") {
+          const oldValue = attr.value.value;
+          const newValue = valueMapping[newPropName][oldValue];
+          if (newValue) {
+            attr.value.value = newValue;
+          }
+        } else if (
+          attr.value.type === "JSXExpressionContainer" &&
+          attr.value.expression.type === "StringLiteral"
+        ) {
+          const oldValue = attr.value.expression.value;
+          const newValue = valueMapping[newPropName][oldValue];
+          if (newValue) {
+            attr.value.expression.value = newValue;
+          }
+        }
       }
     }
   });
