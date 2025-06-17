@@ -3,8 +3,8 @@ const jscodeshift = require("jscodeshift");
 // Configuration: Map old components to new ones
 const COMPONENT_MAPPING = {
   // Old component name -> New component name
-  Avatar: "NewButton",
-  AvatarFallback: "NewInput",
+  AvatarImage: "NewButton",
+  OldInput: "NewInput",
   OldModal: "NewModal",
   OldCard: "NewCard",
   // Add more mappings as needed
@@ -14,30 +14,111 @@ const COMPONENT_MAPPING = {
 const PROPS_MAPPING = {
   NewButton: {
     // old prop -> new prop
-    className: "class",
+    variant: "type",
     size: "buttonSize",
     disabled: "isDisabled",
+    loading: "isLoading",
   },
   NewInput: {
     placeholder: "placeholderText",
     value: "inputValue",
     onChange: "onValueChange",
+    error: "errorMessage",
   },
   NewModal: {
     visible: "isOpen",
     onClose: "onDismiss",
     title: "modalTitle",
+    width: "modalWidth",
   },
   NewCard: {
     bordered: "hasBorder",
     shadow: "elevation",
+    hoverable: "isHoverable",
   },
   // Add more component-specific prop mappings
 };
 
+// Configuration: Props to remove for each component
+const PROPS_TO_REMOVE = {
+  NewButton: [
+    "className",
+    "oldStyle",
+    "legacyMode",
+    // Props that no longer exist in the new library
+  ],
+  NewInput: [
+    "autosize",
+    "addonBefore",
+    "addonAfter",
+    // Old input-specific props to remove
+  ],
+  NewModal: [
+    "mask",
+    "maskClosable",
+    "destroyOnClose",
+    // Modal props that are no longer supported
+  ],
+  NewCard: [
+    "loading",
+    "noHovering",
+    "type",
+    // Card props to remove
+  ],
+  // Add more component-specific props to remove
+};
+
+// Configuration: Global props to remove from all components
+const GLOBAL_PROPS_TO_REMOVE = [
+  "data-testid", // if you want to remove all test ids
+  "ref", // if you want to remove all refs (be careful with this)
+  // Add props that should be removed from all components
+];
+
 // Configuration: Library names
 const OLD_LIBRARY_NAME = "old-ui-library";
 const NEW_LIBRARY_NAME = "new-ui-library";
+
+/**
+ * Remove specified props from JSX element
+ */
+function removeProps(attributes, propsToRemove) {
+  return attributes.filter((attr) => {
+    if (attr.type === "JSXAttribute" && attr.name && attr.name.name) {
+      const propName = attr.name.name;
+      return !propsToRemove.includes(propName);
+    }
+    return true;
+  });
+}
+
+/**
+ * Transform props: rename and remove as specified
+ */
+function transformProps(attributes, componentName) {
+  const propMapping = PROPS_MAPPING[componentName] || {};
+  const propsToRemove = [
+    ...(PROPS_TO_REMOVE[componentName] || []),
+    ...GLOBAL_PROPS_TO_REMOVE,
+  ];
+
+  // First, remove unwanted props
+  let filteredAttributes = removeProps(attributes, propsToRemove);
+
+  // Then, rename props according to mapping
+  filteredAttributes.forEach((attr) => {
+    if (attr.type === "JSXAttribute" && attr.name && attr.name.name) {
+      const oldPropName = attr.name.name;
+      const newPropName = propMapping[oldPropName];
+
+      if (newPropName) {
+        attr.name.name = newPropName;
+      }
+    }
+  });
+
+  return filteredAttributes;
+}
 
 /**
  * Main transformation function
@@ -87,20 +168,18 @@ function transformer(fileInfo, api) {
         path.node.name.name = newComponentName;
         hasChanges = true;
 
-        // Update props if mapping exists
-        const propMapping = PROPS_MAPPING[newComponentName];
-        if (propMapping && path.node.attributes) {
-          path.node.attributes.forEach((attr) => {
-            if (attr.type === "JSXAttribute" && attr.name.name) {
-              const oldPropName = attr.name.name;
-              const newPropName = propMapping[oldPropName];
+        // Transform props (rename and remove)
+        if (path.node.attributes && path.node.attributes.length > 0) {
+          const originalLength = path.node.attributes.length;
+          path.node.attributes = transformProps(
+            path.node.attributes,
+            newComponentName
+          );
 
-              if (newPropName) {
-                attr.name.name = newPropName;
-                hasChanges = true;
-              }
-            }
-          });
+          // Check if any attributes were removed or modified
+          if (path.node.attributes.length !== originalLength) {
+            hasChanges = true;
+          }
         }
       }
     });
@@ -121,6 +200,35 @@ function transformer(fileInfo, api) {
         }
       }
     });
+  });
+
+  // Step 3: Handle components that keep the same name but need prop changes
+  // This is useful when you're not changing component names but just updating props
+  Object.keys(PROPS_MAPPING).forEach((componentName) => {
+    if (!Object.values(COMPONENT_MAPPING).includes(componentName)) {
+      // This component name wasn't in the mapping, so it might be a same-name component
+      root.find(j.JSXOpeningElement).forEach((path) => {
+        if (path.node.name.name === componentName) {
+          if (path.node.attributes && path.node.attributes.length > 0) {
+            const originalLength = path.node.attributes.length;
+            const originalAttributes = JSON.stringify(path.node.attributes);
+
+            path.node.attributes = transformProps(
+              path.node.attributes,
+              componentName
+            );
+
+            // Check if any attributes were removed or modified
+            if (
+              path.node.attributes.length !== originalLength ||
+              JSON.stringify(path.node.attributes) !== originalAttributes
+            ) {
+              hasChanges = true;
+            }
+          }
+        }
+      });
+    }
   });
 
   return hasChanges ? root.toSource({ quote: "single" }) : null;
